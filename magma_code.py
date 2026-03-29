@@ -384,9 +384,20 @@ def interactive_mode():
             encrypt = (action == '1')
             action_text = "зашифрования" if encrypt else "расшифрования"
 
-            # 3. Путь к входному файлу
+            # 3. Путь к входному файлу (с правильными примерами)
             print(f"\n[3] Введите путь к файлу для {action_text}")
-            print("    Примеры:  test.txt, folder/test.txt, C:/path/test.txt")
+            if encrypt:
+                print("    Примеры:")
+                print("      - test.txt (если файл в текущей папке)")
+                print("      - folder/test.txt (если в подпапке)")
+                print("      - C:/Users/name/test.txt (полный путь)")
+            else:
+                print("    Примеры (расшифрование):")
+                print("      - test.txt.enc (если файл в текущей папке)")
+                print("      - folder/test.txt.enc (если в подпапке)")
+                print("      - C:/Users/name/test.txt.enc (полный путь)")
+                print("    Примечание: ожидается файл, зашифрованный этой программой")
+
             input_path = input("Путь: ").strip()
 
             if not os.path.exists(input_path):
@@ -398,9 +409,20 @@ def interactive_mode():
             file_size = os.path.getsize(input_path)
             print(f"✓ Файл найден. Размер: {file_size} байт")
 
-            # 4. Путь к выходному файлу
-            default_output = input_path + (".enc" if encrypt else ".dec")
-            print(f"\n[4] Выходной файл (Enter = {default_output})")
+            # 4. Путь к выходному файлу (с правильными расширениями)
+            if encrypt:
+                default_output = input_path + ".enc"
+                output_hint = "зашифрованного"
+            else:
+                # Удаляем .enc если есть, добавляем .dec
+                if input_path.lower().endswith('.enc'):
+                    default_output = input_path[:-4] + ".dec"
+                else:
+                    default_output = input_path + ".dec"
+                output_hint = "расшифрованного"
+
+            print(f"\n[4] Выходной файл ({output_hint})")
+            print(f"    Enter = {default_output}")
             output_path = input("Путь: ").strip()
             if not output_path:
                 output_path = default_output
@@ -449,6 +471,8 @@ def interactive_mode():
                 if "padding" in str(e).lower():
                     print(f"\n✗ ОШИБКА: {e}")
                     print("  Скорее всего, ключ неверный или файл поврежден.")
+                    print("  При расшифровании убедитесь, что используете тот же ключ,")
+                    print("  который использовался при зашифровании.")
                 else:
                     raise
 
