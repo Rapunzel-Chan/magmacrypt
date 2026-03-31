@@ -23,10 +23,10 @@
 import os
 from typing import List, Tuple
 
-
 # ============================================================================
 # ШАГ 1: S-БЛОКИ (фиксированные таблицы замен)
 # ============================================================================
+
 
 class MagmaSBoxes:
     """
@@ -55,6 +55,7 @@ class MagmaSBoxes:
 # ШАГ 2-3: РАЗВЕРТЫВАНИЕ КЛЮЧА
 # ============================================================================
 
+
 class MagmaKeySchedule:
     """
     Развертывание ключа для шифра Магма.
@@ -73,8 +74,8 @@ class MagmaKeySchedule:
 
         parts = []
         for i in range(8):
-            chunk = key[i * 4:(i + 1) * 4]
-            value = int.from_bytes(chunk, byteorder='big')
+            chunk = key[i * 4 : (i + 1) * 4]
+            value = int.from_bytes(chunk, byteorder="big")
             parts.append(value)
         return parts
 
@@ -88,10 +89,38 @@ class MagmaKeySchedule:
 
         # Порядок использования ключей в 32 раундах (по ГОСТ Р 34.12-2015)
         order = [
-            0, 1, 2, 3, 4, 5, 6, 7,  # раунды 1-8
-            0, 1, 2, 3, 4, 5, 6, 7,  # раунды 9-16
-            0, 1, 2, 3, 4, 5, 6, 7,  # раунды 17-24
-            7, 6, 5, 4, 3, 2, 1, 0   # раунды 25-32 (обратный порядок)
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,  # раунды 1-8
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,  # раунды 9-16
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,  # раунды 17-24
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            0,  # раунды 25-32 (обратный порядок)
         ]
 
         round_keys = [k[idx] for idx in order]
@@ -101,6 +130,7 @@ class MagmaKeySchedule:
 # ============================================================================
 # ШАГ 4: ФУНКЦИЯ g (СЕТЬ ФЕЙСТЕЛЯ)
 # ============================================================================
+
 
 class MagmaFeistelFunction:
     """
@@ -154,6 +184,7 @@ class MagmaFeistelFunction:
 # ШАГ 5: ОСНОВНОЙ КЛАСС ШИФРА
 # ============================================================================
 
+
 class MagmaCipher:
     """
     ШАГ 4: Взять блок данных (8 байт), разделить на L и R
@@ -173,13 +204,13 @@ class MagmaCipher:
         """Разделяем 8-байтный блок на левую и правую половины (по 4 байта)."""
         if len(block) != self.BLOCK_SIZE:
             raise ValueError(f"Блок должен быть {self.BLOCK_SIZE} байт")
-        left = int.from_bytes(block[0:4], byteorder='big')
-        right = int.from_bytes(block[4:8], byteorder='big')
+        left = int.from_bytes(block[0:4], byteorder="big")
+        right = int.from_bytes(block[4:8], byteorder="big")
         return left, right
 
     def _halves_to_bytes(self, left: int, right: int) -> bytes:
         """Собираем левую и правую половины в 8-байтный блок."""
-        return left.to_bytes(4, 'big') + right.to_bytes(4, 'big')
+        return left.to_bytes(4, "big") + right.to_bytes(4, "big")
 
     def encrypt_block(self, plaintext: bytes) -> bytes:
         """
@@ -232,13 +263,13 @@ class MagmaCipher:
         """Зашифрование с паддингом по процедуре 2 ГОСТ Р 34.13-2015."""
         r = len(data) % self.BLOCK_SIZE
         if r != 0:
-            padded = data + b'\x80' + b'\x00' * (self.BLOCK_SIZE - r - 1)
+            padded = data + b"\x80" + b"\x00" * (self.BLOCK_SIZE - r - 1)
         else:
-            padded = data + b'\x80' + b'\x00' * (self.BLOCK_SIZE - 1)
+            padded = data + b"\x80" + b"\x00" * (self.BLOCK_SIZE - 1)
 
         result = bytearray()
         for i in range(0, len(padded), self.BLOCK_SIZE):
-            result.extend(self.encrypt_block(padded[i:i + self.BLOCK_SIZE]))
+            result.extend(self.encrypt_block(padded[i : i + self.BLOCK_SIZE]))
         return bytes(result)
 
     def decrypt(self, data: bytes) -> bytes:
@@ -249,7 +280,7 @@ class MagmaCipher:
         # Расшифровываем блоками
         result = bytearray()
         for i in range(0, len(data), self.BLOCK_SIZE):
-            block = data[i:i + self.BLOCK_SIZE]
+            block = data[i : i + self.BLOCK_SIZE]
             result.extend(self.decrypt_block(block))
 
         # Удаляем паддинг процедуры 2 (ищем байт 0x80 с конца)
@@ -264,6 +295,7 @@ class MagmaCipher:
 # ============================================================================
 # ТЕСТИРОВАНИЕ НА КОНТРОЛЬНЫХ ПРИМЕРАХ ИЗ ГОСТ
 # ============================================================================
+
 
 def test_magma():
     """Проверка на контрольных примерах из ГОСТ Р 34.12-2015 (Приложение А.2)."""
@@ -317,6 +349,7 @@ def test_magma():
 # ИНТЕРАКТИВНЫЙ РЕЖИМ
 # ============================================================================
 
+
 def interactive_mode():
     """Интерактивный режим с циклом для повторных операций."""
     print("\n" + "=" * 70)
@@ -335,10 +368,10 @@ def interactive_mode():
             key_input = input("Ключ: ").strip()
 
             # Очистка от пробелов и невидимых символов
-            key_input = ''.join(key_input.split())
-            key_input = key_input.replace('\n', '').replace('\r', '').replace('\t', '')
+            key_input = "".join(key_input.split())
+            key_input = key_input.replace("\n", "").replace("\r", "").replace("\t", "")
 
-            if key_input.lower() == 'q':
+            if key_input.lower() == "q":
                 print("Выход из программы.")
                 break
 
@@ -349,7 +382,7 @@ def interactive_mode():
                 continue
 
             # Проверка символов
-            valid_chars = set('0123456789abcdefABCDEF')
+            valid_chars = set("0123456789abcdefABCDEF")
             invalid_chars = [c for c in key_input if c not in valid_chars]
             if invalid_chars:
                 print(f"Ошибка: недопустимые символы: {invalid_chars}")
@@ -375,13 +408,13 @@ def interactive_mode():
 
             action = input("\nДействие (0-2): ").strip()
 
-            if action == '0':
+            if action == "0":
                 continue
-            if action not in ['1', '2']:
+            if action not in ["1", "2"]:
                 print("Ошибка: выберите 1, 2 или 0")
                 continue
 
-            encrypt = (action == '1')
+            encrypt = action == "1"
             action_text = "зашифрования" if encrypt else "расшифрования"
 
             # 3. Путь к входному файлу (с правильными примерами)
@@ -415,7 +448,7 @@ def interactive_mode():
                 output_hint = "зашифрованного"
             else:
                 # Удаляем .enc если есть, добавляем .dec
-                if input_path.lower().endswith('.enc'):
+                if input_path.lower().endswith(".enc"):
                     default_output = input_path[:-4] + ".dec"
                 else:
                     default_output = input_path + ".dec"
@@ -443,7 +476,7 @@ def interactive_mode():
             print("-" * 50)
 
             confirm = input("\nВыполнить операцию? (y/n): ").strip().lower()
-            if confirm != 'y':
+            if confirm != "y":
                 print("Операция отменена")
                 continue
 
@@ -452,7 +485,7 @@ def interactive_mode():
 
             cipher = MagmaCipher(key)
 
-            with open(input_path, 'rb') as f:
+            with open(input_path, "rb") as f:
                 data = f.read()
 
             try:
@@ -461,7 +494,7 @@ def interactive_mode():
                 else:
                     result = cipher.decrypt(data)
 
-                with open(output_path, 'wb') as f:
+                with open(output_path, "wb") as f:
                     f.write(result)
 
                 print(f"\n✓ ГОТОВО! Результат сохранен в {output_path}")
@@ -478,7 +511,7 @@ def interactive_mode():
 
             # 7. Спросить, продолжить ли
             again = input("\nВыполнить еще одну операцию? (y/n): ").strip().lower()
-            if again != 'y':
+            if again != "y":
                 print("Выход из программы.")
                 break
 
@@ -501,5 +534,5 @@ if __name__ == "__main__":
     # Запрос на запуск интерактивного режима
     print("\n" + "=" * 70)
     run_interactive = input("Запустить интерактивный режим для работы с файлами? (y/n): ").strip().lower()
-    if run_interactive == 'y':
+    if run_interactive == "y":
         interactive_mode()

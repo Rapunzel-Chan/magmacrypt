@@ -7,6 +7,7 @@
 """
 
 from typing import Tuple
+
 from magma_code import MagmaCipher
 
 
@@ -39,6 +40,7 @@ def _lsb(data: bytes, bits: int) -> bytes:
 # ПРОЦЕДУРЫ ДОПОЛНЕНИЯ ПО ГОСТ Р 34.13-2015 (раздел 4.1)
 # ============================================================================
 
+
 def _padding_procedure_1(data: bytes, block_size: int) -> bytes:
     """
     Процедура 1 по ГОСТ Р 34.13-2015, раздел 4.1.1.
@@ -55,7 +57,7 @@ def _padding_procedure_1(data: bytes, block_size: int) -> bytes:
     if r == 0:
         return data
     padding_len = block_size - r
-    return data + b'\x00' * padding_len
+    return data + b"\x00" * padding_len
 
 
 def _padding_procedure_2(data: bytes, block_size: int) -> bytes:
@@ -73,9 +75,9 @@ def _padding_procedure_2(data: bytes, block_size: int) -> bytes:
     r = len(data) % block_size
     if r == 0:
         # Если длина кратна блоку, добавляем полный блок: 1 || 0^{ℓ-1}
-        return data + b'\x80' + b'\x00' * (block_size - 1)
+        return data + b"\x80" + b"\x00" * (block_size - 1)
     padding_len = block_size - r
-    return data + b'\x80' + b'\x00' * (padding_len - 1)
+    return data + b"\x80" + b"\x00" * (padding_len - 1)
 
 
 def _padding_procedure_3(data: bytes, block_size: int) -> Tuple[bytes, bool]:
@@ -126,6 +128,7 @@ def _remove_padding_procedure_3(data: bytes, block_size: int, was_full: bool) ->
 # РЕЖИМ 1: ECB (Electronic Codebook) - простая замена
 # ============================================================================
 
+
 class ModeECB:
     """
     Режим простой замены по ГОСТ Р 34.13-2015, раздел 5.1.
@@ -148,13 +151,13 @@ class ModeECB:
         """
         r = len(data) % self._block_size
         if r != 0:
-            padded = data + b'\x80' + b'\x00' * (self._block_size - r - 1)
+            padded = data + b"\x80" + b"\x00" * (self._block_size - r - 1)
         else:
             padded = data  # Не добавляем паддинг, если длина кратна блоку!
 
         result = bytearray()
         for i in range(0, len(padded), self._block_size):
-            result.extend(self._cipher.encrypt_block(padded[i:i + self._block_size]))
+            result.extend(self._cipher.encrypt_block(padded[i : i + self._block_size]))
         return bytes(result)
 
     def decrypt(self, data: bytes) -> bytes:
@@ -166,7 +169,7 @@ class ModeECB:
 
         result = bytearray()
         for i in range(0, len(data), self._block_size):
-            result.extend(self._cipher.decrypt_block(data[i:i + self._block_size]))
+            result.extend(self._cipher.decrypt_block(data[i : i + self._block_size]))
 
         # Удаляем паддинг только если он был добавлен
         original_len = len(result)
@@ -181,6 +184,7 @@ class ModeECB:
 # ============================================================================
 # РЕЖИМ 2: CBC (Cipher Block Chaining) - простая замена с зацеплением
 # ============================================================================
+
 
 class ModeCBC:
     """
@@ -225,7 +229,7 @@ class ModeCBC:
         reg = self._iv
 
         for i in range(0, len(padded), self._block_size):
-            block = padded[i:i + self._block_size]
+            block = padded[i : i + self._block_size]
             xored = _xor_bytes(block, _msb(reg, self._n_bits))
             encrypted = self._cipher.encrypt_block(xored)  # Исправлено
             result.extend(encrypted)
@@ -243,7 +247,7 @@ class ModeCBC:
         reg = self._iv
 
         for i in range(0, len(data), self._block_size):
-            block = data[i:i + self._block_size]
+            block = data[i : i + self._block_size]
             decrypted = self._cipher.decrypt_block(block)
             xored = _xor_bytes(decrypted, _msb(reg, self._n_bits))
             result.extend(xored)
@@ -257,6 +261,7 @@ class ModeCBC:
 # ============================================================================
 # РЕЖИМ 3: CFB (Cipher Feedback) - гаммирование с обратной связью по шифртексту
 # ============================================================================
+
 
 class ModeCFB:
     """
@@ -299,10 +304,10 @@ class ModeCFB:
         reg = self._iv
 
         for i in range(0, len(data), self._s_bytes):
-            block = data[i:i + self._s_bytes]
+            block = data[i : i + self._s_bytes]
             gamma = self._cipher.encrypt_block(_msb(reg, self._n_bits))
             gamma_trunc = _msb(gamma, self._s)
-            encrypted = _xor_bytes(block, gamma_trunc[:len(block)])
+            encrypted = _xor_bytes(block, gamma_trunc[: len(block)])
             result.extend(encrypted)
             reg = _lsb(reg, self._m - self._s) + encrypted
 
@@ -317,10 +322,10 @@ class ModeCFB:
         reg = self._iv
 
         for i in range(0, len(data), self._s_bytes):
-            block = data[i:i + self._s_bytes]
+            block = data[i : i + self._s_bytes]
             gamma = self._cipher.encrypt_block(_msb(reg, self._n_bits))
             gamma_trunc = _msb(gamma, self._s)
-            decrypted = _xor_bytes(block, gamma_trunc[:len(block)])
+            decrypted = _xor_bytes(block, gamma_trunc[: len(block)])
             result.extend(decrypted)
             reg = _lsb(reg, self._m - self._s) + block
 
@@ -330,6 +335,7 @@ class ModeCFB:
 # ============================================================================
 # РЕЖИМ 4: OFB (Output Feedback) - гаммирование с обратной связью по выходу
 # ============================================================================
+
 
 class ModeOFB:
     """
@@ -373,10 +379,10 @@ class ModeOFB:
         reg = self._iv
 
         for i in range(0, len(data), self._s_bytes):
-            block = data[i:i + self._s_bytes]
+            block = data[i : i + self._s_bytes]
             gamma = self._cipher.encrypt_block(_msb(reg, self._n_bits))
             gamma_trunc = _msb(gamma, self._s)
-            encrypted = _xor_bytes(block, gamma_trunc[:len(block)])
+            encrypted = _xor_bytes(block, gamma_trunc[: len(block)])
             result.extend(encrypted)
             reg = _lsb(reg, self._m - self._n_bits) + gamma
 
@@ -390,6 +396,7 @@ class ModeOFB:
 # ============================================================================
 # РЕЖИМ 5: CTR (Counter) - гаммирование
 # ============================================================================
+
 
 class ModeCTR:
     """
@@ -419,12 +426,12 @@ class ModeCTR:
             raise ValueError(f"CTR: для Магмы IV должен быть {expected_iv_len} байта")
 
         # CTR1 = IV || 0^32 (конкатенация)
-        self._counter_bytes = iv + b'\x00' * (self._block_size // 2)
-        self._counter = int.from_bytes(self._counter_bytes, byteorder='big')
+        self._counter_bytes = iv + b"\x00" * (self._block_size // 2)
+        self._counter = int.from_bytes(self._counter_bytes, byteorder="big")
 
     def _get_counter_block(self) -> bytes:
         # Возвращаем полный блок (8 байт) для Магмы
-        return self._counter.to_bytes(self._block_size, byteorder='big')
+        return self._counter.to_bytes(self._block_size, byteorder="big")
 
     def _increment_counter(self):
         # Инкремент по модулю 2^64
@@ -436,10 +443,10 @@ class ModeCTR:
 
         try:
             for i in range(0, len(data), self._s_bytes):
-                block = data[i:i + self._s_bytes]
+                block = data[i : i + self._s_bytes]
                 gamma = self._cipher.encrypt_block(self._get_counter_block())
                 gamma_trunc = _msb(gamma, self._s)
-                result.extend(_xor_bytes(block, gamma_trunc[:len(block)]))
+                result.extend(_xor_bytes(block, gamma_trunc[: len(block)]))
                 self._increment_counter()
         finally:
             self._counter = original_counter
@@ -457,6 +464,7 @@ class ModeCTR:
 # РЕЖИМ 6: MAC (Message Authentication Code) - выработка имитовставки
 # ============================================================================
 
+
 class ModeMAC:
     """
     Режим выработки имитовставки по ГОСТ Р 34.13-2015, раздел 5.6.
@@ -472,9 +480,9 @@ class ModeMAC:
 
     def _left_shift_one(self, data: bytes) -> bytes:
         """Сдвиг влево на 1 бит в поле GF(2^n)."""
-        value = int.from_bytes(data, byteorder='big')
+        value = int.from_bytes(data, byteorder="big")
         shifted = (value << 1) & 0xFFFFFFFFFFFFFFFF
-        return shifted.to_bytes(self._block_size, byteorder='big')
+        return shifted.to_bytes(self._block_size, byteorder="big")
 
     def _get_msb_bit(self, data: bytes) -> int:
         """Получение старшего бита (MSB) числа в big-endian."""
@@ -517,8 +525,8 @@ class ModeMAC:
             blocks = [bytes(self._block_size)]
             full_last = True
         else:
-            blocks = [data[i:i + self._block_size] for i in range(0, len(data), self._block_size)]
-            full_last = (len(blocks[-1]) == self._block_size)
+            blocks = [data[i : i + self._block_size] for i in range(0, len(data), self._block_size)]
+            full_last = len(blocks[-1]) == self._block_size
 
         # Применяем процедуру 3 к последнему блоку
         if full_last:

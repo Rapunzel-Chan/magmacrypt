@@ -6,16 +6,14 @@
 """
 
 import pytest
-from magma_code import MagmaCipher
-from magma_modes import (
-    ModeECB, ModeCBC, ModeCTR, ModeCFB, ModeOFB, ModeMAC,
-    _xor_bytes, _msb, _lsb
-)
 
+from magma_code import MagmaCipher
+from magma_modes import ModeCBC, ModeCFB, ModeCTR, ModeECB, ModeMAC, ModeOFB, _lsb, _msb, _xor_bytes
 
 # ============================================================================
 # ФИКСТУРЫ
 # ============================================================================
+
 
 @pytest.fixture
 def key() -> bytes:
@@ -32,6 +30,7 @@ def cipher(key) -> MagmaCipher:
 # ============================================================================
 # ТЕСТЫ ECB (Electronic Codebook) - Таблица А.7, стр. 35
 # ============================================================================
+
 
 class TestECB:
     """Режим простой замены (Electronic Codebook)"""
@@ -95,6 +94,7 @@ class TestECB:
 # ТЕСТЫ CBC (Cipher Block Chaining) - Таблица А.10, стр. 38
 # ============================================================================
 
+
 class TestCBC:
     """Режим простой замены с зацеплением (Cipher Block Chaining)"""
 
@@ -138,11 +138,7 @@ class TestCBC:
     def test_encrypt_decrypt_roundtrip(self, cipher):
         """Проверка цикла: зашифрование -> расшифрование"""
         cbc = ModeCBC(cipher, self.IV, m=self.M_BITS, use_padding=False)
-        test_data = bytes.fromhex(
-            "92def06b3c130a59"
-            "db54c704f8189d20"
-            "4a98fb2e67a8024c"
-        )
+        test_data = bytes.fromhex("92def06b3c130a59" "db54c704f8189d20" "4a98fb2e67a8024c")
 
         encrypted = cbc.encrypt(test_data)
         decrypted = cbc.decrypt(encrypted)
@@ -165,6 +161,7 @@ class TestCBC:
 # ============================================================================
 # ТЕСТЫ CTR (Counter) - Таблица А.8, стр. 36
 # ============================================================================
+
 
 class TestCTR:
     """Режим гаммирования (Counter)"""
@@ -208,11 +205,7 @@ class TestCTR:
     def test_encrypt_decrypt_roundtrip(self, cipher):
         """Проверка цикла: зашифрование -> расшифрование"""
         ctr = ModeCTR(cipher, self.IV)
-        test_data = bytes.fromhex(
-            "92def06b3c130a59"
-            "db54c704f8189d20"
-            "4a98fb2e67a8024c"
-        )
+        test_data = bytes.fromhex("92def06b3c130a59" "db54c704f8189d20" "4a98fb2e67a8024c")
 
         encrypted = ctr.encrypt(test_data)
         decrypted = ctr.decrypt(encrypted)
@@ -229,14 +222,15 @@ class TestCTR:
         block2 = ctr._get_counter_block()
 
         # Счетчик должен увеличиться на 1
-        val1 = int.from_bytes(block1, 'big')
-        val2 = int.from_bytes(block2, 'big')
+        val1 = int.from_bytes(block1, "big")
+        val2 = int.from_bytes(block2, "big")
         assert val2 == val1 + 1, "Counter increment failed"
 
 
 # ============================================================================
 # ТЕСТЫ CFB (Cipher Feedback) - Таблица А.11, стр. 39
 # ============================================================================
+
 
 class TestCFB:
     """Режим гаммирования с обратной связью по шифртексту"""
@@ -282,10 +276,7 @@ class TestCFB:
     def test_encrypt_decrypt_roundtrip(self, cipher):
         """Проверка цикла: зашифрование -> расшифрование"""
         cfb = ModeCFB(cipher, self.IV, s=self.S_BITS, m=self.M_BITS)
-        test_data = bytes.fromhex(
-            "92def06b3c130a59"
-            "db54c704f8189d20"
-        )
+        test_data = bytes.fromhex("92def06b3c130a59" "db54c704f8189d20")
 
         encrypted = cfb.encrypt(test_data)
         decrypted = cfb.decrypt(encrypted)
@@ -307,6 +298,7 @@ class TestCFB:
 # ============================================================================
 # ТЕСТЫ OFB (Output Feedback) - Таблица А.9, стр. 37
 # ============================================================================
+
 
 class TestOFB:
     """Режим гаммирования с обратной связью по выходу"""
@@ -353,10 +345,7 @@ class TestOFB:
     def test_encrypt_decrypt_roundtrip(self, cipher):
         """Проверка цикла: зашифрование -> расшифрование"""
         ofb = ModeOFB(cipher, self.IV, s=self.S_BITS, m=self.M_BITS)
-        test_data = bytes.fromhex(
-            "92def06b3c130a59"
-            "db54c704f8189d20"
-        )
+        test_data = bytes.fromhex("92def06b3c130a59" "db54c704f8189d20")
 
         encrypted = ofb.encrypt(test_data)
         decrypted = ofb.decrypt(encrypted)
@@ -380,16 +369,12 @@ class TestOFB:
 # ТЕСТЫ MAC (Message Authentication Code) - Таблица А.12, стр. 40
 # ============================================================================
 
+
 class TestMAC:
     """Режим выработки имитовставки"""
 
     # Контрольные данные из Таблицы А.12
-    TEST_DATA = bytes.fromhex(
-        "92def06b3c130a59"
-        "db54c704f8189d20"
-        "4a98fb2e67a8024c"
-        "8912409b17b57e41"
-    )
+    TEST_DATA = bytes.fromhex("92def06b3c130a59" "db54c704f8189d20" "4a98fb2e67a8024c" "8912409b17b57e41")
     EXPECTED_MAC_32 = bytes.fromhex("154e7210")  # 32 бита
     EXPECTED_MAC_64 = bytes.fromhex("154e72102030c5bb")  # 64 бита (из таблицы)
 
@@ -456,6 +441,7 @@ class TestMAC:
 # КРОСС-РЕЖИМНЫЕ ТЕСТЫ
 # ============================================================================
 
+
 class TestCrossMode:
     """Тесты, проверяющие корректность работы между режимами"""
 
@@ -486,8 +472,9 @@ class TestCrossMode:
         ofb_result = ofb.encrypt(test_data)
 
         # Для длинных данных результаты должны отличаться
-        assert cfb_result != ofb_result, \
-            f"CFB and OFB should differ for long data. First 16 bytes: CFB={cfb_result[:16].hex()}, OFB={ofb_result[:16].hex()}"
+        assert (
+            cfb_result != ofb_result
+        ), f"CFB and OFB should differ for long data. First 16 bytes: CFB={cfb_result[:16].hex()}, OFB={ofb_result[:16].hex()}"
 
     def test_ctr_consistency_with_different_iv(self, cipher):
         """Проверка, что разные IV в CTR дают разные результаты"""
@@ -505,6 +492,7 @@ class TestCrossMode:
 # ============================================================================
 # ТЕСТЫ ВСПОМОГАТЕЛЬНЫХ ФУНКЦИЙ
 # ============================================================================
+
 
 class TestHelperFunctions:
     """Тесты вспомогательных функций из magma_modes"""

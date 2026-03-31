@@ -6,7 +6,7 @@
 import sys
 from typing import Tuple
 
-from magma_code import MagmaCipher, MagmaSBoxes, MagmaKeySchedule
+from magma_code import MagmaCipher, MagmaKeySchedule, MagmaSBoxes
 
 
 class MagmaCipherDebug(MagmaCipher):
@@ -201,13 +201,13 @@ def main():
 
         choice = input("\nВаш выбор (1/2/q): ").strip().lower()
 
-        if choice == '1':
+        if choice == "1":
             debug_encrypt()
             input("\nНажмите Enter для продолжения...")
-        elif choice == '2':
+        elif choice == "2":
             debug_decrypt()
             input("\nНажмите Enter для продолжения...")
-        elif choice == 'q':
+        elif choice == "q":
             print("\nВыход из программы. До свидания!")
             break
         else:
