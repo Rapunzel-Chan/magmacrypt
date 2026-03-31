@@ -1,20 +1,12 @@
 """
 Отладочная версия шифра Магма с пошаговым выводом.
-Для проверки промежуточных значений и сверки с ГОСТ.
-
-Выбор режима:
-1 - показать отладку ЗАШИФРОВАНИЯ (на контрольном примере ГОСТ)
-2 - показать отладку РАСШИФРОВАНИЯ (на контрольном примере ГОСТ)
-q - выход из программы
+Позволяет проследить все этапы шифрования и сверить с ГОСТ.
 """
 
 import sys
 from typing import Tuple
 
-# Добавляем путь к модулям
-sys.path.insert(0, '.')
-
-from magma_code import MagmaCipher, MagmaSBoxes
+from magma_code import MagmaCipher, MagmaSBoxes, MagmaKeySchedule
 
 
 class MagmaCipherDebug(MagmaCipher):
@@ -22,156 +14,87 @@ class MagmaCipherDebug(MagmaCipher):
     Отладочная версия шифра с выводом промежуточных значений.
     """
 
-    def __init__(self, key: bytes, debug: bool = False):
-        super().__init__(key)
-        self.debug = debug
-
-    # ========================================================================
-    # ШИФРОВАНИЕ С ОТЛАДКОЙ
-    # ========================================================================
-
     def encrypt_block_debug(self, plaintext: bytes) -> bytes:
-        """Шифрование одного блока с отладочным выводом."""
+        """Шифрование блока с пошаговым отладочным выводом."""
+        # ШАГ 1: Разделение блока на левую и правую половины
         left, right = self._bytes_to_halves(plaintext)
 
-        if self.debug:
-            print("\n" + "=" * 70)
-            print(f"НАЧАЛО ШИФРОВАНИЯ БЛОКА: {plaintext.hex()}")
-            print(f"L0 = 0x{left:08X}, R0 = 0x{right:08X}")
-            print("=" * 70)
+        print("\n" + "=" * 80)
+        print(f"НАЧАЛО ЗАШИФРОВАНИЯ БЛОКА: {plaintext.hex()}")
+        print("=" * 80)
+        print(f"\nШАГ 1: Разделение блока на половины")
+        print(f"  Блок (8 байт): {plaintext.hex()}")
+        print(f"  Левая половина L0 = 0x{left:08X}")
+        print(f"  Правая половина R0 = 0x{right:08X}")
+
+        # ШАГ 2: 32 раунда сети Фейстеля
+        print("\n" + "=" * 80)
+        print("ШАГ 2: Выполнение 32 раундов сети Фейстеля")
+        print("=" * 80)
 
         for i in range(32):
             round_key = self._round_keys[i]
 
-            if self.debug:
-                print(f"\n--- РАУНД {i + 1:2d} ---")
-                print(f"  Вход: L = 0x{left:08X}, R = 0x{right:08X}")
-                print(f"  Ключ K{i + 1}: 0x{round_key:08X}")
+            print(f"\n--- РАУНД {i+1:2d} ---")
+            print(f"  Вход: L = 0x{left:08X}, R = 0x{right:08X}")
+            print(f"  Ключ K{i+1}: 0x{round_key:08X}")
 
-            # ШАГ a: g = (R + K) → S-блоки → сдвиг на 11
+            # ШАГ a: вычисление функции g(R, K)
+            print(f"\n  Шаг a: вычисление g(R, K)")
+
+            # a1: сложение по модулю 2^32
             summed = (right + round_key) & 0xFFFFFFFF
-            if self.debug:
-                print(f"  Шаг a1: R + K = 0x{right:08X} + 0x{round_key:08X} = 0x{summed:08X}")
+            print(f"    a1) R + K = 0x{right:08X} + 0x{round_key:08X} = 0x{summed:08X}")
 
-            # Преобразование t (S-блоки)
+            # a2: нелинейное преобразование t (S-блоки)
+            print(f"    a2) Нелинейное преобразование t (S-блоки):")
             transformed = self._t_transform_debug(summed)
-            if self.debug:
-                print(f"  Шаг a2: После S-блоков (t) = 0x{transformed:08X}")
+            print(f"         Результат t = 0x{transformed:08X}")
 
-            # Циклический сдвиг
+            # a3: циклический сдвиг влево на 11 бит
             g_value = self._cyclic_left_shift_11(transformed)
-            if self.debug:
-                print(f"  Шаг a3: После сдвига на 11 (g) = 0x{g_value:08X}")
+            print(f"    a3) Циклический сдвиг на 11 бит влево: g = 0x{g_value:08X}")
 
-            # ШАГ b: новая правая = L XOR g
+            # ШАГ b: новая правая половина
             new_right = left ^ g_value
-            if self.debug:
-                print(f"  Шаг b: L XOR g = 0x{left:08X} XOR 0x{g_value:08X} = 0x{new_right:08X}")
+            print(f"\n  Шаг b: new_R = L XOR g")
+            print(f"    0x{left:08X} XOR 0x{g_value:08X} = 0x{new_right:08X}")
 
-            # ШАГ c: новая левая = R
+            # ШАГ c: новая левая половина
             new_left = right
-            if self.debug:
-                print(f"  Шаг c: Новая L = R = 0x{new_left:08X}")
-                print(f"  Выход раунда: L = 0x{new_left:08X}, R = 0x{new_right:08X}")
+            print(f"\n  Шаг c: new_L = R = 0x{new_left:08X}")
 
+            # Обновление для следующего раунда
             left, right = new_left, new_right
 
-        # Результат: R || L
-        result = self._halves_to_bytes(right, left)
+            print(f"\n  Выход раунда: L = 0x{left:08X}, R = 0x{right:08X}")
 
-        if self.debug:
-            print("\n" + "=" * 70)
-            print(f"РЕЗУЛЬТАТ ПОСЛЕ 32 РАУНДОВ:")
-            print(f"  L = 0x{left:08X}, R = 0x{right:08X}")
-            print(f"  Блок (R||L): {result.hex()}")
-            print("=" * 70)
+        # ШАГ 3: Финальная перестановка (R || L)
+        print("\n" + "=" * 80)
+        print("ШАГ 3: Финальная перестановка")
+        print("=" * 80)
+        print(f"  После 32 раундов: L = 0x{left:08X}, R = 0x{right:08X}")
+        print(f"  Результат = R || L = 0x{right:08X}{left:08X}")
+
+        result = self._halves_to_bytes(right, left)
+        print(f"\n  Шифртекст (8 байт): {result.hex()}")
 
         return result
-
-    # ========================================================================
-    # РАСШИФРОВАНИЕ С ОТЛАДКОЙ
-    # ========================================================================
-
-    def decrypt_block_debug(self, ciphertext: bytes) -> bytes:
-        """Расшифрование одного блока с отладочным выводом."""
-        left, right = self._bytes_to_halves(ciphertext)
-
-        if self.debug:
-            print("\n" + "=" * 70)
-            print(f"НАЧАЛО РАСШИФРОВАНИЯ БЛОКА: {ciphertext.hex()}")
-            print(f"L0 = 0x{left:08X}, R0 = 0x{right:08X}")
-            print("=" * 70)
-
-        # Расшифрование: ключи в обратном порядке
-        for i in range(31, -1, -1):
-            round_key = self._round_keys[i]
-            round_num = i + 1
-
-            if self.debug:
-                print(f"\n--- РАУНД {round_num:2d} ---")
-                print(f"  Вход: L = 0x{left:08X}, R = 0x{right:08X}")
-                print(f"  Ключ K{round_num}: 0x{round_key:08X}")
-
-            # ШАГ a: g = (R + K) → S-блоки → сдвиг на 11
-            summed = (right + round_key) & 0xFFFFFFFF
-            if self.debug:
-                print(f"  Шаг a1: R + K = 0x{right:08X} + 0x{round_key:08X} = 0x{summed:08X}")
-
-            # Преобразование t (S-блоки)
-            transformed = self._t_transform_debug(summed)
-            if self.debug:
-                print(f"  Шаг a2: После S-блоков (t) = 0x{transformed:08X}")
-
-            # Циклический сдвиг
-            g_value = self._cyclic_left_shift_11(transformed)
-            if self.debug:
-                print(f"  Шаг a3: После сдвига на 11 (g) = 0x{g_value:08X}")
-
-            # ШАГ b: новая правая = L XOR g
-            new_right = left ^ g_value
-            if self.debug:
-                print(f"  Шаг b: L XOR g = 0x{left:08X} XOR 0x{g_value:08X} = 0x{new_right:08X}")
-
-            # ШАГ c: новая левая = R
-            new_left = right
-            if self.debug:
-                print(f"  Шаг c: Новая L = R = 0x{new_left:08X}")
-                print(f"  Выход раунда: L = 0x{new_left:08X}, R = 0x{new_right:08X}")
-
-            left, right = new_left, new_right
-
-        # Результат: R || L
-        result = self._halves_to_bytes(right, left)
-
-        if self.debug:
-            print("\n" + "=" * 70)
-            print(f"РЕЗУЛЬТАТ ПОСЛЕ 32 РАУНДОВ:")
-            print(f"  L = 0x{left:08X}, R = 0x{right:08X}")
-            print(f"  Блок (R||L): {result.hex()}")
-            print("=" * 70)
-
-        return result
-
-    # ========================================================================
-    # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
-    # ========================================================================
 
     def _t_transform_debug(self, value: int) -> int:
-        """Преобразование t с детальным выводом."""
-        if self.debug:
-            print(f"    Разбиение на кусочки (младшие→старшие):")
+        """
+        Нелинейное преобразование t с детальным выводом.
+        По ГОСТ: t(a) = π₇(a₇) || π₆(a₆) || ... || π₀(a₀)
+        где a₀ — младшие 4 бита, a₇ — старшие 4 бита.
+        """
+        print(f"      Разбиение 0x{value:08X} на 4-битные кусочки:")
 
         result = 0
         for i in range(8):
             nibble = (value >> (i * 4)) & 0x0F
             substituted = MagmaSBoxes.substitute(nibble, i)
+            print(f"        Кусочек {i}: биты {i*4}-{i*4+3} = 0x{nibble:X} → S[{i}][{nibble}] = 0x{substituted:X}")
             result |= substituted << (i * 4)
-
-            if self.debug:
-                print(f"      Кусочек {i}: 0x{nibble:X} → S[{i}][{nibble}] = 0x{substituted:X}")
-
-        if self.debug:
-            print(f"    Результат t: 0x{result:08X}")
 
         return result
 
@@ -179,133 +102,117 @@ class MagmaCipherDebug(MagmaCipher):
     def _cyclic_left_shift_11(value: int) -> int:
         return ((value << 11) | (value >> 21)) & 0xFFFFFFFF
 
-    def _bytes_to_halves(self, block: bytes) -> Tuple[int, int]:
-        if len(block) != self.BLOCK_SIZE:
-            raise ValueError(f"Блок должен быть {self.BLOCK_SIZE} байт")
-        left = int.from_bytes(block[0:4], byteorder='big')
-        right = int.from_bytes(block[4:8], byteorder='big')
-        return left, right
-
-    def _halves_to_bytes(self, left: int, right: int) -> bytes:
-        return left.to_bytes(4, 'big') + right.to_bytes(4, 'big')
-
-
-# ============================================================================
-# ЗАПУСК ОТЛАДКИ
-# ============================================================================
 
 def debug_encrypt():
-    """Отладка шифрования на контрольном примере ГОСТ."""
-    print("\n" + "=" * 70)
-    print("ОТЛАДКА ШИФРОВАНИЯ (контрольный пример ГОСТ)")
-    print("=" * 70)
+    """Отладка зашифрования на контрольном примере из ГОСТ."""
+    print("\n" + "=" * 80)
+    print("ОТЛАДКА ЗАШИФРОВАНИЯ (контрольный пример ГОСТ Р 34.12-2015)")
+    print("=" * 80)
 
-    # Ключ из ГОСТ
     key_hex = "ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
-    key = bytes.fromhex(key_hex)
+    master_key = bytes.fromhex(key_hex)
 
-    # Открытый текст из ГОСТ
     plaintext_hex = "fedcba9876543210"
     plaintext = bytes.fromhex(plaintext_hex)
 
-    # Ожидаемый шифротекст
     expected_hex = "4ee901e5c2d8ca3d"
     expected = bytes.fromhex(expected_hex)
 
-    print(f"\nКлюч:           {key_hex}")
-    print(f"Открытый текст: {plaintext_hex}")
-    print(f"Ожидаемый шифр: {expected_hex}")
+    print(f"\nИсходные данные:")
+    print(f"  Ключ (256 бит): {key_hex}")
+    print(f"  Открытый текст: {plaintext_hex}")
+    print(f"  Ожидаемый шифр: {expected_hex}")
 
-    # Создаем отладочный шифр
-    cipher = MagmaCipherDebug(key, debug=True)
+    # Вывод развернутых ключей
+    print("\n" + "=" * 80)
+    print("РАЗВЕРТЫВАНИЕ КЛЮЧА")
+    print("=" * 80)
 
-    # Шифруем с выводом
-    ciphertext = cipher.encrypt_block_debug(plaintext)
+    k_parts = MagmaKeySchedule.split_into_8_parts(master_key)
+    print("\nШаг 1: Разбиение ключа на 8 частей по 32 бита (K1...K8):")
+    for i, k in enumerate(k_parts, 1):
+        print(f"  K{i} = 0x{k:08X}")
 
-    print(f"\n{'=' * 70}")
-    print(f"ИТОГОВЫЙ ШИФРОТЕКСТ: {ciphertext.hex()}")
-    print(f"ОЖИДАЛОСЬ:           {expected_hex}")
-    print(f"{'=' * 70}")
+    cipher = MagmaCipherDebug(master_key)
 
-    if ciphertext == expected:
-        print("\n✓ ОТЛАДКА ШИФРОВАНИЯ ПРОЙДЕНА!")
+    print("\nШаг 2: Формирование 32 раундовых ключей:")
+    for i, rk in enumerate(cipher._round_keys, 1):
+        print(f"  K{i:2d} = 0x{rk:08X}")
+
+    result = cipher.encrypt_block_debug(plaintext)
+
+    print("\n" + "=" * 80)
+    print("РЕЗУЛЬТАТ ПРОВЕРКИ")
+    print("=" * 80)
+    print(f"  Ожидаемый шифр: {expected_hex}")
+    print(f"  Полученный шифр: {result.hex()}")
+
+    if result == expected:
+        print("\n✓ ОТЛАДКА ПРОЙДЕНА: результат соответствует ГОСТ!")
     else:
-        print("\n✗ ОТЛАДКА ШИФРОВАНИЯ: ЕСТЬ РАСХОЖДЕНИЯ!")
+        print("\n✗ ОТЛАДКА НЕ ПРОЙДЕНА")
+
+    return result == expected
 
 
 def debug_decrypt():
-    """Отладка расшифрования на контрольном примере ГОСТ."""
-    print("\n" + "=" * 70)
-    print("ОТЛАДКА РАСШИФРОВАНИЯ (контрольный пример ГОСТ)")
-    print("=" * 70)
+    """Отладка расшифрования."""
+    print("\n" + "=" * 80)
+    print("ОТЛАДКА РАСШИФРОВАНИЯ (контрольный пример ГОСТ Р 34.12-2015)")
+    print("=" * 80)
 
-    # Ключ из ГОСТ
     key_hex = "ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
-    key = bytes.fromhex(key_hex)
+    master_key = bytes.fromhex(key_hex)
 
-    # Шифротекст из ГОСТ (результат шифрования)
     ciphertext_hex = "4ee901e5c2d8ca3d"
     ciphertext = bytes.fromhex(ciphertext_hex)
 
-    # Ожидаемый открытый текст
     expected_hex = "fedcba9876543210"
     expected = bytes.fromhex(expected_hex)
 
-    print(f"\nКлюч:           {key_hex}")
-    print(f"Шифротекст:     {ciphertext_hex}")
-    print(f"Ожидаемый текст: {expected_hex}")
+    print(f"\nИсходные данные:")
+    print(f"  Ключ: {key_hex}")
+    print(f"  Шифртекст: {ciphertext_hex}")
+    print(f"  Ожидаемый открытый текст: {expected_hex}")
 
-    # Создаем отладочный шифр
-    cipher = MagmaCipherDebug(key, debug=True)
+    cipher = MagmaCipherDebug(master_key)
+    result = cipher.decrypt_block(ciphertext)
 
-    # Расшифровываем с выводом
-    plaintext = cipher.decrypt_block_debug(ciphertext)
+    print(f"\nРезультат расшифрования: {result.hex()}")
 
-    print(f"\n{'=' * 70}")
-    print(f"ИТОГОВЫЙ РАСШИФРОВАННЫЙ ТЕКСТ: {plaintext.hex()}")
-    print(f"ОЖИДАЛОСЬ:                      {expected_hex}")
-    print(f"{'=' * 70}")
-
-    if plaintext == expected:
-        print("\n✓ ОТЛАДКА РАСШИФРОВАНИЯ ПРОЙДЕНА!")
+    if result == expected:
+        print("\n✓ ОТЛАДКА ПРОЙДЕНА")
     else:
-        print("\n✗ ОТЛАДКА РАСШИФРОВАНИЯ: ЕСТЬ РАСХОЖДЕНИЯ!")
+        print("\n✗ ОТЛАДКА НЕ ПРОЙДЕНА")
 
+    return result == expected
 
-# ============================================================================
-# ГЛАВНОЕ МЕНЮ С ЦИКЛОМ
-# ============================================================================
 
 def main():
-    """Главное меню с циклом."""
+    """Главное меню."""
     while True:
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 80)
         print("ОТЛАДОЧНАЯ ВЕРСИЯ ШИФРА МАГМА")
-        print("=" * 70)
-        print("\nВыберите режим отладки:")
-        print("  1 - Отладка ЗАШИФРОВАНИЯ (на примере ГОСТ)")
-        print("  2 - Отладка РАСШИФРОВАНИЯ (на примере ГОСТ)")
-        print("  q - Выход из программы")
+        print("=" * 80)
+        print("\nВыберите режим:")
+        print("  1 - Отладка ЗАШИФРОВАНИЯ (контрольный пример из ГОСТ)")
+        print("  2 - Отладка РАСШИФРОВАНИЯ")
+        print("  q - Выход")
 
         choice = input("\nВаш выбор (1/2/q): ").strip().lower()
 
         if choice == '1':
             debug_encrypt()
-            input("\nНажмите Enter, чтобы продолжить...")
+            input("\nНажмите Enter для продолжения...")
         elif choice == '2':
             debug_decrypt()
-            input("\nНажмите Enter, чтобы продолжить...")
+            input("\nНажмите Enter для продолжения...")
         elif choice == 'q':
             print("\nВыход из программы. До свидания!")
             break
         else:
-            print("\nОшибка: неверный выбор. Пожалуйста, введите 1, 2 или q.")
-            input("Нажмите Enter, чтобы продолжить...")
+            print("\nНеверный выбор.")
 
-
-# ============================================================================
-# ЗАПУСК
-# ============================================================================
 
 if __name__ == "__main__":
     main()

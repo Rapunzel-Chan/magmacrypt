@@ -15,7 +15,9 @@
    b) new_R = L XOR g
    c) new_L = R
    d) L = new_L, R = new_R
+   На 32 раунде последние R и L не меняются!
 6. Результат = R || L (правая + левая)
+
 """
 
 import os
@@ -81,7 +83,7 @@ class MagmaKeySchedule:
         """
         ШАГ 3: Из мастер-ключа получаем 32 раундовых ключа.
         """
-        # ШАГ 2: разбиваем на 8 частей
+        # разбиваем на 8 частей
         k = MagmaKeySchedule.split_into_8_parts(master_key)
 
         # Порядок использования ключей в 32 раундах (по ГОСТ Р 34.12-2015)
@@ -97,7 +99,7 @@ class MagmaKeySchedule:
 
 
 # ============================================================================
-# ШАГ 5: ФУНКЦИЯ g (СЕТЬ ФЕЙСТЕЛЯ)
+# ШАГ 4: ФУНКЦИЯ g (СЕТЬ ФЕЙСТЕЛЯ)
 # ============================================================================
 
 class MagmaFeistelFunction:
@@ -149,7 +151,7 @@ class MagmaFeistelFunction:
 
 
 # ============================================================================
-# ШАГ 4, 5, 6: ОСНОВНОЙ КЛАСС ШИФРА
+# ШАГ 5: ОСНОВНОЙ КЛАСС ШИФРА
 # ============================================================================
 
 class MagmaCipher:
@@ -181,7 +183,7 @@ class MagmaCipher:
 
     def encrypt_block(self, plaintext: bytes) -> bytes:
         """
-        Шифрование одного 8-байтного блока.
+        Защифрование одного 8-байтного блока.
 
         ПОШАГОВО:
         1. Разделить блок на L и R
@@ -227,22 +229,20 @@ class MagmaCipher:
         return self._halves_to_bytes(right, left)
 
     def encrypt(self, data: bytes) -> bytes:
-        """Шифрование данных произвольной длины (с PKCS#7 паддингом)."""
-        # Добавляем паддинг
-        padding_len = self.BLOCK_SIZE - (len(data) % self.BLOCK_SIZE)
-        if padding_len == 0:
-            padding_len = self.BLOCK_SIZE
-        padded = data + bytes([padding_len] * padding_len)
+        """Зашифрование с паддингом по процедуре 2 ГОСТ Р 34.13-2015."""
+        r = len(data) % self.BLOCK_SIZE
+        if r != 0:
+            padded = data + b'\x80' + b'\x00' * (self.BLOCK_SIZE - r - 1)
+        else:
+            padded = data + b'\x80' + b'\x00' * (self.BLOCK_SIZE - 1)
 
-        # Шифруем блоками
         result = bytearray()
         for i in range(0, len(padded), self.BLOCK_SIZE):
-            block = padded[i:i + self.BLOCK_SIZE]
-            result.extend(self.encrypt_block(block))
+            result.extend(self.encrypt_block(padded[i:i + self.BLOCK_SIZE]))
         return bytes(result)
 
     def decrypt(self, data: bytes) -> bytes:
-        """Расшифрование данных произвольной длины (с удалением паддинга)."""
+        """Расшифрование с удалением паддинга по процедуре 2 ГОСТ Р 34.13-2015."""
         if len(data) % self.BLOCK_SIZE != 0:
             raise ValueError("Данные должны быть кратны размеру блока")
 
@@ -252,13 +252,13 @@ class MagmaCipher:
             block = data[i:i + self.BLOCK_SIZE]
             result.extend(self.decrypt_block(block))
 
-        # Удаляем паддинг
-        padding_len = result[-1]
-        if padding_len > self.BLOCK_SIZE or padding_len == 0:
-            raise ValueError("Неверный паддинг")
-        if result[-padding_len:] != bytes([padding_len]) * padding_len:
-            raise ValueError("Неверный паддинг")
-        return bytes(result[:-padding_len])
+        # Удаляем паддинг процедуры 2 (ищем байт 0x80 с конца)
+        for i in range(len(result) - 1, -1, -1):
+            if result[i] == 0x80:
+                return bytes(result[:i])
+
+        # Если 0x80 не найден, возвращаем как есть
+        return bytes(result)
 
 
 # ============================================================================
@@ -295,9 +295,9 @@ def test_magma():
     print(f"\nПолученный шифр: {ciphertext_hex}")
 
     if ciphertext == expected:
-        print("\n✓ ШИФРОВАНИЕ: УСПЕШНО!")
+        print("\n✓ ЗАШИФРОВАНИЕ: УСПЕШНО!")
     else:
-        print("\n✗ ШИФРОВАНИЕ: ОШИБКА!")
+        print("\n✗ ЗАШИФРОВАНИЕ: ОШИБКА!")
 
     # Расшифровываем
     decrypted = cipher.decrypt_block(ciphertext)

@@ -10,8 +10,7 @@ from typing import Optional
 
 from magma_code import MagmaCipher, test_magma
 from magma_modes import (
-    ModeECB, ModeCBC, ModeCFB, ModeOFB, ModeCTR, ModeMAC,
-    _int_to_bytes, _bytes_to_int
+    ModeECB, ModeCBC, ModeCFB, ModeOFB, ModeCTR, ModeMAC
 )
 
 
@@ -78,36 +77,55 @@ def interactive_mode():
                 print("Ошибка: выберите 1-6 или 0")
                 continue
 
-            # 3. Для режимов, требующих IV
+            # 3. Параметры для режимов
             iv = None
             nonce = None
+            m = None  # размер регистра сдвига для CBC/CFB/OFB
+            s = None  # размер блока гаммы для CFB/OFB/CTR
 
             if mode_choice in ['2', '3', '4']:  # CBC, CFB, OFB
-                print(f"\n[3] Введите вектор инициализации (IV)")
-                print(f"    IV должен быть 8 байт (16 hex-символов)")
-                print("    Пример: 1234567890abcdef")
-                iv_hex = input("IV: ").strip().replace(' ', '')
-                if len(iv_hex) != 16:
-                    print(f"Ошибка: IV должен быть 16 hex-символов (8 байт), получено {len(iv_hex)}")
+                print("\n[3] Введите вектор инициализации (IV)")
+                print("    Для CBC, CFB, OFB IV должен быть полным блоком (8 байт)")
+                print("    Но в ГОСТ могут быть и другие размеры (m = n * z)")
+                print("    По умолчанию используется m = n = 64 бита (8 байт)")
+
+                iv_hex = input("IV (hex, Enter для 8 байт нулей): ").strip().replace(' ', '')
+                if not iv_hex:
+                    iv = bytes(8)  # 8 байт нулей
+                    m = 64
+                else:
+                    iv = bytes.fromhex(iv_hex)
+                    m = len(iv) * 8
+
+                print(f"  IV = {iv.hex()} ({m} бит)")
+
+                # Для CFB и OFB можно задать s
+                if mode_choice in ['3', '4']:
+                    s_input = input("Размер блока гаммы s в битах (Enter = 64): ").strip()
+                    s = 64 if not s_input else int(s_input)
+                    if s < 1 or s > 64:
+                        print("Ошибка: s должно быть от 1 до 64")
+                        continue
+                    print(f"  s = {s} бит")
+
+            elif mode_choice == '5':  # CTR
+                print("\n[3] Введите синхропосылку IV для CTR")
+                print("    Для Магмы IV должен быть 32 бита (4 байта)")
+                print("    Пример: 12345678")
+                iv_hex = input("IV (hex, 4 байта): ").strip().replace(' ', '')
+                if len(iv_hex) != 8:
+                    print("Ошибка: IV должен быть 8 hex-символов (4 байта)")
                     continue
                 try:
-                    iv = bytes.fromhex(iv_hex)
+                    nonce = bytes.fromhex(iv_hex)
                 except ValueError:
                     print("Ошибка: IV должен быть в hex-формате")
                     continue
 
-            elif mode_choice == '5':  # CTR
-                print(f"\n[3] Введите nonce (уникальное значение)")
-                print(f"    Nonce может быть от 1 до 8 байт (2-16 hex-символов)")
-                print("    Пример: 12345678")
-                nonce_hex = input("Nonce: ").strip().replace(' ', '')
-                if len(nonce_hex) < 2 or len(nonce_hex) > 16:
-                    print("Ошибка: nonce должен быть от 2 до 16 hex-символов (1-8 байт)")
-                    continue
-                try:
-                    nonce = bytes.fromhex(nonce_hex)
-                except ValueError:
-                    print("Ошибка: nonce должен быть в hex-формате")
+                s_input = input("Размер блока гаммы s в битах (Enter = 64): ").strip()
+                s = 64 if not s_input else int(s_input)
+                if s < 1 or s > 64:
+                    print("Ошибка: s должно быть от 1 до 64")
                     continue
 
             # 4. Для MAC - отдельная логика
@@ -131,8 +149,8 @@ def interactive_mode():
 
                 # Длина MAC (по умолчанию 32 бита)
                 s_input = input("Длина MAC в битах (по умолчанию 32, от 1 до 64): ").strip()
-                s = 32 if not s_input else int(s_input)
-                if s < 1 or s > 64:
+                mac_len = 32 if not s_input else int(s_input)
+                if mac_len < 1 or mac_len > 64:
                     print("Ошибка: длина MAC должна быть от 1 до 64 бит")
                     continue
 
@@ -142,14 +160,14 @@ def interactive_mode():
                     data = f.read()
 
                 if mac_action == '1':
-                    mac_value = mac_mode.generate(data, s)
+                    mac_value = mac_mode.generate(data, mac_len)
                     output_path = input("Введите путь для сохранения MAC: ").strip()
                     output_dir = os.path.dirname(output_path)
                     if output_dir and not os.path.exists(output_dir):
                         os.makedirs(output_dir)
                     with open(output_path, 'wb') as f:
                         f.write(mac_value)
-                    print(f"\n✓ MAC ({s} бит): {mac_value.hex()}")
+                    print(f"\n✓ MAC ({mac_len} бит): {mac_value.hex()}")
                     print(f"  Сохранен в {output_path}")
 
                 else:  # mac_action == '2'
@@ -159,7 +177,7 @@ def interactive_mode():
                     except ValueError:
                         print("Ошибка: MAC должен быть в hex-формате")
                         continue
-                    is_valid = mac_mode.verify(data, mac_value, s)
+                    is_valid = mac_mode.verify(data, mac_value, mac_len)
                     print(f"\nMAC: {mac_value.hex()}")
                     print(f"Результат проверки: {'✓ ПРОЙДЕНА (данные подлинны)' if is_valid else '✗ НЕ ПРОЙДЕНА (данные изменены!)'}")
 
@@ -207,23 +225,39 @@ def interactive_mode():
                 os.makedirs(output_dir)
                 print(f"  Создана папка: {output_dir}")
 
-            # 8. Создание экземпляра режима
-            if mode_choice == '1':
-                mode = ModeECB(cipher)
-                mode_name = "ECB"
-            elif mode_choice == '2':
-                mode = ModeCBC(cipher, iv)
-                mode_name = "CBC"
-            elif mode_choice == '3':
-                mode = ModeCFB(cipher, iv)
-                mode_name = "CFB"
-            elif mode_choice == '4':
-                mode = ModeOFB(cipher, iv)
-                mode_name = "OFB"
-            elif mode_choice == '5':
-                mode = ModeCTR(cipher, nonce)
-                mode_name = "CTR"
-            else:
+            # 8. Создание экземпляра режима с правильными параметрами
+            try:
+                if mode_choice == '1':
+                    mode = ModeECB(cipher)
+                    mode_name = "ECB"
+                elif mode_choice == '2':
+                    if m is None:
+                        m = 64
+                    mode = ModeCBC(cipher, iv, m)
+                    mode_name = "CBC"
+                elif mode_choice == '3':
+                    if m is None:
+                        m = 64
+                    if s is None:
+                        s = 64
+                    mode = ModeCFB(cipher, iv, s, m)
+                    mode_name = "CFB"
+                elif mode_choice == '4':
+                    if m is None:
+                        m = 64
+                    if s is None:
+                        s = 64
+                    mode = ModeOFB(cipher, iv, s, m)
+                    mode_name = "OFB"
+                elif mode_choice == '5':
+                    if s is None:
+                        s = 64
+                    mode = ModeCTR(cipher, nonce, s)
+                    mode_name = "CTR"
+                else:
+                    continue
+            except ValueError as e:
+                print(f"Ошибка инициализации режима: {e}")
                 continue
 
             # 9. Подтверждение
@@ -232,10 +266,12 @@ def interactive_mode():
             print(f"  Режим: {mode_name}")
             print(f"  Операция: {'ЗАШИФРОВАНИЕ' if encrypt else 'РАСШИФРОВАНИЕ'}")
             print(f"  Ключ: {key.hex()[:16]}...{key.hex()[-16:]}")
-            if iv:
-                print(f"  IV: {iv.hex()}")
-            if nonce:
-                print(f"  Nonce: {nonce.hex()}")
+            if iv is not None:
+                print(f"  IV: {iv.hex()} ({m} бит)")
+            if nonce is not None:
+                print(f"  IV (CTR): {nonce.hex()}")
+            if s is not None and mode_choice in ['3', '4', '5']:
+                print(f"  s: {s} бит")
             print(f"  Входной файл: {input_path} ({file_size} байт)")
             print(f"  Выходной файл: {output_path}")
             print("-" * 50)

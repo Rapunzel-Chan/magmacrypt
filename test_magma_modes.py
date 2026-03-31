@@ -1,389 +1,557 @@
 """
-Тестирование режимов работы по ГОСТ Р 34.13-2015.
-Проверяются свойства, а не конкретные значения (так как в ГОСТ нет тестовых векторов).
+Тестирование режимов работы шифра Магма по ГОСТ Р 34.13-2015
+с использованием pytest.
+
+Контрольные примеры из Приложения А.2 (стр. 35-40) ГОСТ Р 34.13-2015
 """
 
-import os
-import sys
-from typing import Tuple
-
-# Добавляем путь к модулям
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from magma_code import MagmaCipher, test_magma
+import pytest
+from magma_code import MagmaCipher
 from magma_modes import (
-    ModeECB, ModeCBC, ModeCFB, ModeOFB, ModeCTR, ModeMAC,
+    ModeECB, ModeCBC, ModeCTR, ModeCFB, ModeOFB, ModeMAC,
     _xor_bytes, _msb, _lsb
 )
 
 
 # ============================================================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ФИКСТУРЫ
 # ============================================================================
 
-def print_test_result(name: str, passed: bool, details: str = ""):
-    """Вывод результата теста."""
-    status = "✓ ПРОЙДЕН" if passed else "✗ НЕ ПРОЙДЕН"
-    print(f"  {name}: {status}")
-    if details and not passed:
-        print(f"    {details}")
+@pytest.fixture
+def key() -> bytes:
+    """Ключ из ГОСТ Р 34.13-2015, Приложение А.2"""
+    return bytes.fromhex("ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
 
 
-# ============================================================================
-# ТЕСТ 1: ECB (проверка на контрольном примере из ГОСТ)
-# ============================================================================
-
-def test_ecb_gost():
-    """Тест ECB на контрольном примере из ГОСТ Р 34.12-2015."""
-    print("\n" + "-" * 50)
-    print("1. ECB - проверка на контрольном примере ГОСТ")
-
-    key = bytes.fromhex("ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
-    plaintext = bytes.fromhex("fedcba9876543210")
-    expected = bytes.fromhex("4ee901e5c2d8ca3d")
-
-    cipher = MagmaCipher(key)
-    ecb = ModeECB(cipher)
-
-    # Шифруем блок (без паддинга, так как ровно 8 байт)
-    encrypted = ecb._cipher.encrypt_block(plaintext)
-
-    passed = (encrypted == expected)
-    print_test_result("Шифрование блока", passed,
-                      f"Получено: {encrypted.hex()}, Ожидалось: {expected.hex()}")
-
-    # Расшифровываем
-    decrypted = ecb._cipher.decrypt_block(encrypted)
-    passed_dec = (decrypted == plaintext)
-    print_test_result("Расшифрование блока", passed_dec)
-
-    return passed and passed_dec
+@pytest.fixture
+def cipher(key) -> MagmaCipher:
+    """Экземпляр шифра Магма с ключом из ГОСТ"""
+    return MagmaCipher(key)
 
 
 # ============================================================================
-# ТЕСТ 2: CBC (проверка свойств)
+# ТЕСТЫ ECB (Electronic Codebook) - Таблица А.7, стр. 35
 # ============================================================================
 
-def test_cbc_properties():
-    """Тест CBC: одинаковые блоки → разные шифротексты, зависимость от IV."""
-    print("\n" + "-" * 50)
-    print("2. CBC - проверка свойств")
+class TestECB:
+    """Режим простой замены (Electronic Codebook)"""
 
-    key = bytes.fromhex("ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
-    cipher = MagmaCipher(key)
+    # Контрольные пары (открытый текст, шифртекст) из Таблицы А.7
+    TEST_VECTORS = [
+        ("92def06b3c130a59", "2b073f0494f372a0"),
+        ("db54c704f8189d20", "de70e715d3556e48"),
+        ("4a98fb2e67a8024c", "11d8d9e9eacfbc1e"),
+        ("8912409b17b57e41", "7c68260996c67efb"),
+    ]
 
-    # Тестовые данные: два одинаковых блока
-    data = b"ABCDEFGHABCDEFGH"  # 16 байт = 2 блока
+    def test_encrypt(self, cipher):
+        """Проверка зашифрования для каждого блока"""
+        ecb = ModeECB(cipher, use_padding=False)
 
-    # Разные IV
-    iv1 = bytes.fromhex("1111111111111111")
-    iv2 = bytes.fromhex("2222222222222222")
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            plain = bytes.fromhex(plain_hex)
+            expected = bytes.fromhex(expected_hex)
+            result = ecb.encrypt(plain)
+            assert result == expected, f"ECB encrypt failed for {plain_hex}"
 
-    cbc1 = ModeCBC(cipher, iv1)
-    cbc2 = ModeCBC(cipher, iv2)
+    def test_decrypt(self, cipher):
+        """Проверка расшифрования для каждого блока"""
+        ecb = ModeECB(cipher, use_padding=False)
 
-    encrypted1 = cbc1.encrypt(data)
-    encrypted2 = cbc2.encrypt(data)
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            ciphertext = bytes.fromhex(expected_hex)
+            expected = bytes.fromhex(plain_hex)
+            result = ecb.decrypt(ciphertext)
+            assert result == expected, f"ECB decrypt failed for {expected_hex}"
 
-    # Проверка 1: разные IV дают разные шифротексты
-    different_iv = (encrypted1 != encrypted2)
-    print_test_result("Разные IV → разные шифротексты", different_iv)
+    def test_encrypt_decrypt_roundtrip(self, cipher):
+        """Проверка цикла: зашифрование -> расшифрование"""
+        ecb = ModeECB(cipher, use_padding=False)
+        test_data = bytes.fromhex("92def06b3c130a59db54c704f8189d20")
 
-    # Проверка 2: одинаковые блоки дают разные шифротексты (из-за сцепления)
-    block1 = encrypted1[:8]
-    block2 = encrypted1[8:16]
-    blocks_different = (block1 != block2)
-    print_test_result("Одинаковые блоки → разные шифротексты (сцепление)", blocks_different)
+        encrypted = ecb.encrypt(test_data)
+        decrypted = ecb.decrypt(encrypted)
 
-    # Проверка 3: расшифрование работает корректно
-    decrypted = cbc1.decrypt(encrypted1)
-    decrypt_works = (decrypted == data)
-    print_test_result("Расшифрование восстанавливает данные", decrypt_works)
+        assert decrypted == test_data, "ECB roundtrip failed"
 
-    return different_iv and blocks_different and decrypt_works
+    def test_padding(self, cipher):
+        """Проверка работы с паддингом (процедура 2)"""
+        ecb = ModeECB(cipher, use_padding=True)
 
+        # Данные не кратные блоку (7 байт)
+        test_data = b"Hello12"  # 7 байт
+        encrypted = ecb.encrypt(test_data)
+        decrypted = ecb.decrypt(encrypted)
+        assert decrypted == test_data, "ECB with padding failed"
 
-# ============================================================================
-# ТЕСТ 3: CFB (проверка свойств)
-# ============================================================================
-
-def test_cfb_properties():
-    """Тест CFB: потоковый режим, не требует паддинга."""
-    print("\n" + "-" * 50)
-    print("3. CFB - проверка свойств")
-
-    key = bytes.fromhex("ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
-    cipher = MagmaCipher(key)
-    iv = bytes.fromhex("1234567890abcdef")
-
-    cfb = ModeCFB(cipher, iv)
-
-    data1 = b"Hello"
-    data2 = b"Hellp"  # изменили последний байт
-
-    encrypted1 = cfb.encrypt(data1)
-    encrypted2 = cfb.encrypt(data2)
-
-    # Проверка 1: длина шифротекста равна длине открытого текста
-    no_padding = (len(encrypted1) == len(data1))
-    print_test_result("Нет паддинга (длина не увеличивается)", no_padding)
-
-    # Проверка 2: расшифрование работает
-    decrypted1 = cfb.decrypt(encrypted1)
-    decrypt_works = (decrypted1 == data1)
-    print_test_result("Расшифрование восстанавливает данные", decrypt_works)
-
-    # Проверка 3: изменение одного байта данных → изменение шифротекста
-    different_data = (encrypted1 != encrypted2)
-    print_test_result("Изменение данных → изменение шифротекста", different_data)
-
-    return no_padding and decrypt_works and different_data
+        # Пустые данные
+        test_data = b""
+        encrypted = ecb.encrypt(test_data)
+        decrypted = ecb.decrypt(encrypted)
+        assert decrypted == test_data, "ECB with empty data failed"
 
 
 # ============================================================================
-# ТЕСТ 4: OFB (проверка свойств)
+# ТЕСТЫ CBC (Cipher Block Chaining) - Таблица А.10, стр. 38
 # ============================================================================
 
-def test_ofb_properties():
-    """Тест OFB: потоковый режим, ошибки не распространяются."""
-    print("\n" + "-" * 50)
-    print("4. OFB - проверка свойств")
+class TestCBC:
+    """Режим простой замены с зацеплением (Cipher Block Chaining)"""
 
-    key = bytes.fromhex("ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
-    cipher = MagmaCipher(key)
-    iv = bytes.fromhex("1234567890abcdef")
+    # Контрольные пары из Таблицы А.10
+    TEST_VECTORS = [
+        ("92def06b3c130a59", "96d1b05eea683919"),
+        ("db54c704f8189d20", "aff76129abb937b9"),
+        ("4a98fb2e67a8024c", "5058b4a1c4bc0019"),
+        ("8912409b17b57e41", "20b78b1a7cd7e667"),
+    ]
 
-    ofb = ModeOFB(cipher, iv)
+    IV = bytes.fromhex("1234567890abcdef234567890abcdef134567890abcdef12")  # m=192 бит
+    M_BITS = 192
 
-    data = b"Hello, World! This is a test."
-    encrypted = ofb.encrypt(data)
+    def test_encrypt(self, cipher):
+        """Проверка зашифрования для каждого блока"""
+        cbc = ModeCBC(cipher, self.IV, m=self.M_BITS, use_padding=False)
 
-    # Проверка 1: расшифрование работает (OFB симметричен)
-    decrypted = ofb.decrypt(encrypted)
-    decrypt_works = (decrypted == data)
-    print_test_result("Расшифрование восстанавливает данные", decrypt_works)
+        all_plain = b""
+        all_expected = b""
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            all_plain += bytes.fromhex(plain_hex)
+            all_expected += bytes.fromhex(expected_hex)
 
-    # Проверка 2: длина не меняется
-    length_preserved = (len(encrypted) == len(data))
-    print_test_result("Длина не меняется", length_preserved)
+        result = cbc.encrypt(all_plain)
+        assert result == all_expected, f"CBC encrypt failed"
 
-    # Проверка 3: повторное шифрование тем же IV дает тот же результат
-    ofb2 = ModeOFB(cipher, iv)
-    encrypted2 = ofb2.encrypt(data)
-    deterministic = (encrypted == encrypted2)
-    print_test_result("Детерминированность (одинаковый IV → одинаковый шифротекст)", deterministic)
+    def test_decrypt(self, cipher):
+        """Проверка расшифрования для каждого блока"""
+        cbc = ModeCBC(cipher, self.IV, m=self.M_BITS, use_padding=False)
 
-    return decrypt_works and length_preserved and deterministic
+        all_plain = b""
+        all_ciphertext = b""
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            all_plain += bytes.fromhex(plain_hex)
+            all_ciphertext += bytes.fromhex(expected_hex)
 
+        result = cbc.decrypt(all_ciphertext)
+        assert result == all_plain, f"CBC decrypt failed"
 
-# ============================================================================
-# ТЕСТ 5: CTR (проверка свойств)
-# ============================================================================
+    def test_encrypt_decrypt_roundtrip(self, cipher):
+        """Проверка цикла: зашифрование -> расшифрование"""
+        cbc = ModeCBC(cipher, self.IV, m=self.M_BITS, use_padding=False)
+        test_data = bytes.fromhex(
+            "92def06b3c130a59"
+            "db54c704f8189d20"
+            "4a98fb2e67a8024c"
+        )
 
-def test_ctr_properties():
-    """Тест CTR: счетчик, произвольный доступ."""
-    print("\n" + "-" * 50)
-    print("5. CTR - проверка свойств")
+        encrypted = cbc.encrypt(test_data)
+        decrypted = cbc.decrypt(encrypted)
 
-    key = bytes.fromhex("ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
-    cipher = MagmaCipher(key)
-    nonce = bytes.fromhex("12345678")
+        assert decrypted == test_data, "CBC roundtrip failed"
 
-    ctr = ModeCTR(cipher, nonce)
+    def test_different_iv(self, cipher):
+        """Проверка, что разные IV дают разные результаты"""
+        cbc1 = ModeCBC(cipher, self.IV, m=self.M_BITS, use_padding=False)
+        cbc2 = ModeCBC(cipher, bytes(24), m=self.M_BITS, use_padding=False)  # нулевой IV
 
-    data = b"Hello, World! This is a test message for CTR mode."
-    encrypted = ctr.encrypt(data)
+        test_data = bytes.fromhex("92def06b3c130a59")
 
-    # Проверка 1: расшифрование работает
-    ctr2 = ModeCTR(cipher, nonce)
-    decrypted = ctr2.decrypt(encrypted)
-    decrypt_works = (decrypted == data)
-    print_test_result("Расшифрование восстанавливает данные", decrypt_works)
+        result1 = cbc1.encrypt(test_data)
+        result2 = cbc2.encrypt(test_data)
 
-    # Проверка 2: длина не меняется
-    length_preserved = (len(encrypted) == len(data))
-    print_test_result("Длина не меняется", length_preserved)
-
-    # Проверка 3: разные nonce дают разные шифротексты
-    nonce2 = bytes.fromhex("87654321")
-    ctr3 = ModeCTR(cipher, nonce2)
-    encrypted2 = ctr3.encrypt(data)
-    different_nonce = (encrypted != encrypted2)
-    print_test_result("Разные nonce → разные шифротексты", different_nonce)
-
-    return decrypt_works and length_preserved and different_nonce
+        assert result1 != result2, "Different IVs should produce different ciphertexts"
 
 
 # ============================================================================
-# ТЕСТ 6: MAC (проверка свойств)
+# ТЕСТЫ CTR (Counter) - Таблица А.8, стр. 36
 # ============================================================================
 
-def test_mac_properties():
-    """Тест MAC: детерминированность, зависимость от ключа и данных."""
-    print("\n" + "-" * 50)
-    print("6. MAC - проверка свойств")
+class TestCTR:
+    """Режим гаммирования (Counter)"""
 
-    key1 = bytes.fromhex("ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
-    key2 = bytes.fromhex("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+    # Контрольные пары из Таблицы А.8
+    TEST_VECTORS = [
+        ("92def06b3c130a59", "4e98110c97b7b93c"),
+        ("db54c704f8189d20", "3e250d93d6e85d69"),
+        ("4a98fb2e67a8024c", "136d868807b2dbef"),
+        ("8912409b17b57e41", "568eb680ab52a12d"),
+    ]
 
-    cipher1 = MagmaCipher(key1)
-    cipher2 = MagmaCipher(key2)
+    IV = bytes.fromhex("12345678")  # 32 бита для Магмы
 
-    mac1 = ModeMAC(cipher1)
-    mac2 = ModeMAC(cipher2)
+    def test_encrypt(self, cipher):
+        """Проверка зашифрования"""
+        ctr = ModeCTR(cipher, self.IV)
 
-    data = b"Hello, World! This is a test message."
-    data_corrupted = b"Hello, World! This is a test message." + b"X"
+        all_plain = b""
+        all_expected = b""
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            all_plain += bytes.fromhex(plain_hex)
+            all_expected += bytes.fromhex(expected_hex)
 
-    # Генерируем MAC для разных ключей и данных
-    mac_key1 = mac1.generate(data, s=32)
-    mac_key1_again = mac1.generate(data, s=32)
-    mac_key2 = mac2.generate(data, s=32)
-    mac_corrupted = mac1.generate(data_corrupted, s=32)
+        result = ctr.encrypt(all_plain)
+        assert result == all_expected, f"CTR encrypt failed"
 
-    # Проверка 1: детерминированность (одинаковые данные и ключ → одинаковый MAC)
-    deterministic = (mac_key1 == mac_key1_again)
-    print_test_result("Детерминированность", deterministic)
+    def test_decrypt(self, cipher):
+        """Проверка расшифрования (должно быть идентично зашифрованию)"""
+        ctr = ModeCTR(cipher, self.IV)
 
-    # Проверка 2: разные ключи → разные MAC
-    different_key = (mac_key1 != mac_key2)
-    print_test_result("Разные ключи → разные MAC", different_key)
+        all_plain = b""
+        all_ciphertext = b""
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            all_plain += bytes.fromhex(plain_hex)
+            all_ciphertext += bytes.fromhex(expected_hex)
 
-    # Проверка 3: разные данные → разные MAC
-    different_data = (mac_key1 != mac_corrupted)
-    print_test_result("Разные данные → разные MAC", different_data)
+        result = ctr.decrypt(all_ciphertext)
+        assert result == all_plain, f"CTR decrypt failed"
 
-    # Проверка 4: верификация работает
-    verify_ok = mac1.verify(data, mac_key1, s=32)
-    print_test_result("Верификация корректного MAC", verify_ok)
+    def test_encrypt_decrypt_roundtrip(self, cipher):
+        """Проверка цикла: зашифрование -> расшифрование"""
+        ctr = ModeCTR(cipher, self.IV)
+        test_data = bytes.fromhex(
+            "92def06b3c130a59"
+            "db54c704f8189d20"
+            "4a98fb2e67a8024c"
+        )
 
-    # Проверка 5: верификация с измененными данными
-    verify_corrupted = not mac1.verify(data_corrupted, mac_key1, s=32)
-    print_test_result("Верификация с измененными данными (должна провалиться)", verify_corrupted)
+        encrypted = ctr.encrypt(test_data)
+        decrypted = ctr.decrypt(encrypted)
 
-    # Проверка 6: верификация с неверным ключом
-    verify_wrong_key = not mac2.verify(data, mac_key1, s=32)
-    print_test_result("Верификация с неверным ключом (должна провалиться)", verify_wrong_key)
+        assert decrypted == test_data, "CTR roundtrip failed"
 
-    return (deterministic and different_key and different_data and
-            verify_ok and verify_corrupted and verify_wrong_key)
+    def test_counter_increment(self, cipher):
+        """Проверка инкрементации счетчика"""
+        ctr = ModeCTR(cipher, self.IV)
 
+        # Получаем первый блок
+        block1 = ctr._get_counter_block()
+        ctr._increment_counter()
+        block2 = ctr._get_counter_block()
 
-# ============================================================================
-# ТЕСТ 7: Процедуры дополнения (по ГОСТ Р 34.13-2015)
-# ============================================================================
-
-def test_padding_procedures():
-    """Тест процедур дополнения из ГОСТ Р 34.13-2015."""
-    print("\n" + "-" * 50)
-    print("7. Процедуры дополнения (ГОСТ Р 34.13-2015)")
-
-    from magma_modes import ModeECB
-
-    # Процедура 3: P^* = P || 1 || 0^{n-r-1} для неполного блока
-    key = bytes.fromhex("ffeeddccbbaa99887766554433221100f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
-    cipher = MagmaCipher(key)
-    ecb = ModeECB(cipher)
-
-    # Тест 1: блок полный (8 байт) → добавляется целый блок паддинга
-    data_full = b"ABCDEFGH"
-    padded_full = ecb._add_padding(data_full)
-    expected_full = b"ABCDEFGH" + bytes([8]) * 8
-    padding_full = (padded_full == expected_full)
-    print_test_result("Полный блок → добавляется блок паддинга", padding_full)
-
-    # Тест 2: блок неполный (5 байт) → добавляется 3 байта со значением 3
-    data_short = b"ABCDE"
-    padded_short = ecb._add_padding(data_short)
-    expected_short = b"ABCDE" + bytes([3]) * 3
-    padding_short = (padded_short == expected_short)
-    print_test_result("Неполный блок → паддинг со значением длины", padding_short)
-
-    # Тест 3: удаление паддинга
-    removed_full = ecb._remove_padding(padded_full)
-    removed_short = ecb._remove_padding(padded_short)
-    remove_works = (removed_full == data_full and removed_short == data_short)
-    print_test_result("Удаление паддинга восстанавливает данные", remove_works)
-
-    return padding_full and padding_short and remove_works
+        # Счетчик должен увеличиться на 1
+        val1 = int.from_bytes(block1, 'big')
+        val2 = int.from_bytes(block2, 'big')
+        assert val2 == val1 + 1, "Counter increment failed"
 
 
 # ============================================================================
-# ТЕСТ 8: Усечение (MSB)
+# ТЕСТЫ CFB (Cipher Feedback) - Таблица А.11, стр. 39
 # ============================================================================
 
-def test_truncation():
-    """Тест функции усечения (MSB)."""
-    print("\n" + "-" * 50)
-    print("8. Усечение (MSB) - ГОСТ Р 34.13-2015")
+class TestCFB:
+    """Режим гаммирования с обратной связью по шифртексту"""
 
-    from magma_modes import _msb
+    # Контрольные пары из Таблицы А.11
+    TEST_VECTORS = [
+        ("92def06b3c130a59", "db37e0e266903c83"),
+        ("db54c704f8189d20", "0d46644c1f9a089c"),
+        ("4a98fb2e67a8024c", "24bdd2035315d38b"),
+        ("8912409b17b57e41", "bcc0321421075505"),
+    ]
 
-    # Тест: взять старшие 24 бита (3 байта) из 8-байтного блока
-    data = bytes.fromhex("A1B2C3D4E5F6A7B8")
-    truncated = _msb(data, 24)
-    expected = bytes.fromhex("A1B2C3")
+    IV = bytes.fromhex("1234567890abcdef234567890abcdef1")  # m=128 бит
+    S_BITS = 64  # s = n = 64 бит
+    M_BITS = 128  # m = 2n = 128 бит
 
-    msb_works = (truncated == expected)
-    print_test_result("MSB (старшие биты) работает корректно", msb_works)
-    if not msb_works:
-        print(f"    Получено: {truncated.hex()}, Ожидалось: {expected.hex()}")
+    def test_encrypt(self, cipher):
+        """Проверка зашифрования для каждого блока"""
+        cfb = ModeCFB(cipher, self.IV, s=self.S_BITS, m=self.M_BITS)
 
-    # Тест: взять старшие 32 бита (4 байта)
-    truncated_32 = _msb(data, 32)
-    expected_32 = bytes.fromhex("A1B2C3D4")
-    msb_32_works = (truncated_32 == expected_32)
-    print_test_result("MSB 32 бита", msb_32_works)
+        all_plain = b""
+        all_expected = b""
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            all_plain += bytes.fromhex(plain_hex)
+            all_expected += bytes.fromhex(expected_hex)
 
-    return msb_works and msb_32_works
+        result = cfb.encrypt(all_plain)
+        assert result == all_expected, f"CFB encrypt failed"
+
+    def test_decrypt(self, cipher):
+        """Проверка расшифрования"""
+        cfb = ModeCFB(cipher, self.IV, s=self.S_BITS, m=self.M_BITS)
+
+        all_plain = b""
+        all_ciphertext = b""
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            all_plain += bytes.fromhex(plain_hex)
+            all_ciphertext += bytes.fromhex(expected_hex)
+
+        result = cfb.decrypt(all_ciphertext)
+        assert result == all_plain, f"CFB decrypt failed"
+
+    def test_encrypt_decrypt_roundtrip(self, cipher):
+        """Проверка цикла: зашифрование -> расшифрование"""
+        cfb = ModeCFB(cipher, self.IV, s=self.S_BITS, m=self.M_BITS)
+        test_data = bytes.fromhex(
+            "92def06b3c130a59"
+            "db54c704f8189d20"
+        )
+
+        encrypted = cfb.encrypt(test_data)
+        decrypted = cfb.decrypt(encrypted)
+
+        assert decrypted == test_data, "CFB roundtrip failed"
+
+    @pytest.mark.parametrize("s", [8, 16, 32, 64])
+    def test_different_s(self, cipher, s):
+        """Проверка работы с разными размерами блока гаммы s"""
+        cfb = ModeCFB(cipher, self.IV, s=s, m=self.M_BITS)
+        test_data = bytes.fromhex("92def06b3c130a59")
+
+        encrypted = cfb.encrypt(test_data)
+        decrypted = cfb.decrypt(encrypted)
+
+        assert decrypted == test_data, f"CFB with s={s} failed"
 
 
 # ============================================================================
-# ЗАПУСК ВСЕХ ТЕСТОВ
+# ТЕСТЫ OFB (Output Feedback) - Таблица А.9, стр. 37
 # ============================================================================
 
-def run_all_tests():
-    """Запуск всех тестов."""
-    print("=" * 70)
-    print("ТЕСТИРОВАНИЕ РЕЖИМОВ РАБОТЫ (ГОСТ Р 34.13-2015)")
-    print("Проверка свойств, а не конкретных значений")
-    print("=" * 70)
+class TestOFB:
+    """Режим гаммирования с обратной связью по выходу"""
 
-    results = []
+    # Контрольные пары из Таблицы А.9
+    TEST_VECTORS = [
+        ("92def06b3c130a59", "db37e0e266903c83"),
+        ("db54c704f8189d20", "0d46644c1f9a089c"),
+        ("4a98fb2e67a8024c", "a0f83062430e327e"),
+        ("8912409b17b57e41", "c824efb8bd4fdb05"),
+    ]
 
-    # Базовый тест ECB по ГОСТ
-    results.append(("ECB (контрольный пример ГОСТ)", test_ecb_gost()))
+    IV = bytes.fromhex("1234567890abcdef234567890abcdef1")  # m=128 бит
+    S_BITS = 64  # s = n = 64 бит
+    M_BITS = 128  # m = 2n = 128 бит
 
-    # Тесты свойств режимов
-    results.append(("CBC (свойства)", test_cbc_properties()))
-    results.append(("CFB (свойства)", test_cfb_properties()))
-    results.append(("OFB (свойства)", test_ofb_properties()))
-    results.append(("CTR (свойства)", test_ctr_properties()))
-    results.append(("MAC (свойства)", test_mac_properties()))
-    results.append(("Процедуры дополнения", test_padding_procedures()))
-    results.append(("Усечение (MSB)", test_truncation()))
+    def test_encrypt(self, cipher):
+        """Проверка зашифрования"""
+        ofb = ModeOFB(cipher, self.IV, s=self.S_BITS, m=self.M_BITS)
 
-    # Итоги
-    print("\n" + "=" * 70)
-    print("ИТОГИ ТЕСТИРОВАНИЯ")
-    print("=" * 70)
+        all_plain = b""
+        all_expected = b""
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            all_plain += bytes.fromhex(plain_hex)
+            all_expected += bytes.fromhex(expected_hex)
 
-    all_passed = True
-    for name, passed in results:
-        status = "✓" if passed else "✗"
-        print(f"  {status} {name}")
-        if not passed:
-            all_passed = False
+        result = ofb.encrypt(all_plain)
+        assert result == all_expected, f"OFB encrypt failed"
 
-    print("\n" + "=" * 70)
-    if all_passed:
-        print("ВСЕ ТЕСТЫ ПРОЙДЕНЫ УСПЕШНО!")
-    else:
-        print("НЕКОТОРЫЕ ТЕСТЫ НЕ ПРОЙДЕНЫ!")
-    print("=" * 70)
+    def test_decrypt(self, cipher):
+        """Проверка расшифрования (OFB: encrypt == decrypt)"""
+        ofb = ModeOFB(cipher, self.IV, s=self.S_BITS, m=self.M_BITS)
 
-    return all_passed
+        all_plain = b""
+        all_ciphertext = b""
+        for plain_hex, expected_hex in self.TEST_VECTORS:
+            all_plain += bytes.fromhex(plain_hex)
+            all_ciphertext += bytes.fromhex(expected_hex)
 
+        # В OFB расшифрование идентично зашифрованию
+        result = ofb.decrypt(all_ciphertext)
+        assert result == all_plain, f"OFB decrypt failed"
+
+    def test_encrypt_decrypt_roundtrip(self, cipher):
+        """Проверка цикла: зашифрование -> расшифрование"""
+        ofb = ModeOFB(cipher, self.IV, s=self.S_BITS, m=self.M_BITS)
+        test_data = bytes.fromhex(
+            "92def06b3c130a59"
+            "db54c704f8189d20"
+        )
+
+        encrypted = ofb.encrypt(test_data)
+        decrypted = ofb.decrypt(encrypted)
+
+        assert decrypted == test_data, "OFB roundtrip failed"
+
+    def test_encrypt_equals_decrypt(self, cipher):
+        """Проверка свойства OFB: encrypt == decrypt"""
+        ofb = ModeOFB(cipher, self.IV, s=self.S_BITS, m=self.M_BITS)
+        test_data = bytes.fromhex("92def06b3c130a59")
+
+        encrypted = ofb.encrypt(test_data)
+        decrypted = ofb.decrypt(encrypted)
+
+        # Дважды зашифровать = расшифровать
+        double_encrypted = ofb.encrypt(encrypted)
+        assert double_encrypted == test_data, "OFB: double encryption should decrypt"
+
+
+# ============================================================================
+# ТЕСТЫ MAC (Message Authentication Code) - Таблица А.12, стр. 40
+# ============================================================================
+
+class TestMAC:
+    """Режим выработки имитовставки"""
+
+    # Контрольные данные из Таблицы А.12
+    TEST_DATA = bytes.fromhex(
+        "92def06b3c130a59"
+        "db54c704f8189d20"
+        "4a98fb2e67a8024c"
+        "8912409b17b57e41"
+    )
+    EXPECTED_MAC_32 = bytes.fromhex("154e7210")  # 32 бита
+    EXPECTED_MAC_64 = bytes.fromhex("154e72102030c5bb")  # 64 бита (из таблицы)
+
+    def test_generate_32bit(self, cipher):
+        """Проверка генерации 32-битного MAC"""
+        mac = ModeMAC(cipher)
+        result = mac.generate(self.TEST_DATA, s=32)
+        assert result == self.EXPECTED_MAC_32, f"MAC 32-bit generation failed"
+
+    def test_generate_64bit(self, cipher):
+        """Проверка генерации 64-битного MAC (полный блок)"""
+        mac = ModeMAC(cipher)
+        result = mac.generate(self.TEST_DATA, s=64)
+        assert result == self.EXPECTED_MAC_64, f"MAC 64-bit generation failed"
+
+    def test_verify_correct(self, cipher):
+        """Проверка верификации корректного MAC"""
+        mac = ModeMAC(cipher)
+        assert mac.verify(self.TEST_DATA, self.EXPECTED_MAC_32, s=32) is True
+
+    def test_verify_incorrect(self, cipher):
+        """Проверка верификации некорректного MAC"""
+        mac = ModeMAC(cipher)
+        wrong_mac = bytes.fromhex("00000000")
+        assert mac.verify(self.TEST_DATA, wrong_mac, s=32) is False
+
+    def test_verify_modified_data(self, cipher):
+        """Проверка, что изменение данных приводит к неверному MAC"""
+        mac = ModeMAC(cipher)
+        modified_data = self.TEST_DATA[:-1] + bytes([self.TEST_DATA[-1] ^ 0xFF])
+        assert mac.verify(modified_data, self.EXPECTED_MAC_32, s=32) is False
+
+    def test_empty_message(self, cipher):
+        """Проверка генерации MAC для пустого сообщения"""
+        mac = ModeMAC(cipher)
+        result = mac.generate(b"", s=32)
+        # Для пустого сообщения MAC не должен быть нулевым
+        assert result != bytes(4), "MAC for empty message should not be zero"
+        assert len(result) == 4, "MAC length should be 4 bytes for s=32"
+
+    def test_different_s_values(self, cipher):
+        """Проверка MAC с разными длинами"""
+        mac = ModeMAC(cipher)
+
+        for s in [8, 16, 24, 32, 40, 48, 56, 64]:
+            result = mac.generate(self.TEST_DATA, s=s)
+            assert len(result) == (s + 7) // 8, f"MAC length mismatch for s={s}"
+            # Проверяем, что результат не нулевой
+            assert result != bytes(len(result)), f"MAC for s={s} should not be zero"
+
+    def test_auxiliary_keys(self, cipher):
+        """Проверка выработки вспомогательных ключей K1 и K2"""
+        mac = ModeMAC(cipher)
+        k1, k2 = mac._derive_keys()
+
+        # K1 и K2 должны быть разными
+        assert k1 != k2, "K1 and K2 should be different"
+        # Длина каждого - 8 байт (64 бита)
+        assert len(k1) == 8, "K1 should be 8 bytes"
+        assert len(k2) == 8, "K2 should be 8 bytes"
+
+
+# ============================================================================
+# КРОСС-РЕЖИМНЫЕ ТЕСТЫ
+# ============================================================================
+
+class TestCrossMode:
+    """Тесты, проверяющие корректность работы между режимами"""
+
+    def test_ecb_cbc_consistency(self, cipher):
+        """Проверка, что ECB и CBC с нулевым IV дают разные результаты"""
+        test_data = bytes.fromhex("92def06b3c130a59" * 2)
+
+        ecb = ModeECB(cipher, use_padding=False)
+        cbc = ModeCBC(cipher, bytes(8), m=64, use_padding=False)
+
+        ecb_result = ecb.encrypt(test_data)
+        cbc_result = cbc.encrypt(test_data)
+
+        # Результаты должны отличаться (CBC с нулевым IV дает эффект зацепления)
+        assert ecb_result != cbc_result, "ECB and CBC should produce different results"
+
+    def test_cfb_ofb_are_different_modes(self, cipher):
+        """Проверка, что CFB и OFB - это разные режимы (результаты отличаются для длинных данных)"""
+        # Используем 10 блоков данных
+        single_block = bytes.fromhex("92def06b3c130a59")
+        test_data = single_block * 10
+        iv = bytes.fromhex("1234567890abcdef234567890abcdef1")
+
+        cfb = ModeCFB(cipher, iv, s=64, m=128)
+        ofb = ModeOFB(cipher, iv, s=64, m=128)
+
+        cfb_result = cfb.encrypt(test_data)
+        ofb_result = ofb.encrypt(test_data)
+
+        # Для длинных данных результаты должны отличаться
+        assert cfb_result != ofb_result, \
+            f"CFB and OFB should differ for long data. First 16 bytes: CFB={cfb_result[:16].hex()}, OFB={ofb_result[:16].hex()}"
+
+    def test_ctr_consistency_with_different_iv(self, cipher):
+        """Проверка, что разные IV в CTR дают разные результаты"""
+        test_data = bytes.fromhex("92def06b3c130a59")
+
+        ctr1 = ModeCTR(cipher, bytes.fromhex("00000000"))
+        ctr2 = ModeCTR(cipher, bytes.fromhex("00000001"))
+
+        result1 = ctr1.encrypt(test_data)
+        result2 = ctr2.encrypt(test_data)
+
+        assert result1 != result2, "Different IVs in CTR should produce different results"
+
+
+# ============================================================================
+# ТЕСТЫ ВСПОМОГАТЕЛЬНЫХ ФУНКЦИЙ
+# ============================================================================
+
+class TestHelperFunctions:
+    """Тесты вспомогательных функций из magma_modes"""
+
+    def test_xor_bytes(self):
+        """Проверка функции XOR байтов"""
+        a = bytes.fromhex("12345678")
+        b = bytes.fromhex("87654321")
+        # 0x12 ^ 0x87 = 0x95
+        # 0x34 ^ 0x65 = 0x51
+        # 0x56 ^ 0x43 = 0x15
+        # 0x78 ^ 0x21 = 0x59
+        expected = bytes.fromhex("95511559")
+        assert _xor_bytes(a, b) == expected
+
+        # Проверка с разной длиной - должно быть исключение
+        with pytest.raises(ValueError, match="длины не совпадают"):
+            _xor_bytes(b"123", b"12")
+
+    def test_msb(self):
+        """Проверка взятия старших битов (MSB)"""
+        data = bytes.fromhex("1234567890ABCDEF")
+        # 8 бит = 1 байт
+        assert _msb(data, 8) == bytes.fromhex("12")
+        # 16 бит = 2 байта
+        assert _msb(data, 16) == bytes.fromhex("1234")
+        # 32 бита = 4 байта
+        assert _msb(data, 32) == bytes.fromhex("12345678")
+        # 64 бита = 8 байт (все данные)
+        assert _msb(data, 64) == data
+
+    def test_lsb(self):
+        """Проверка взятия младших битов (LSB)"""
+        data = bytes.fromhex("1234567890ABCDEF")
+        # 8 бит = 1 байт
+        assert _lsb(data, 8) == bytes.fromhex("EF")
+        # 16 бит = 2 байта
+        assert _lsb(data, 16) == bytes.fromhex("CDEF")
+        # 32 бита = 4 байта
+        assert _lsb(data, 32) == bytes.fromhex("90ABCDEF")
+        # 64 бита = 8 байт (все данные)
+        assert _lsb(data, 64) == data
+
+
+# ============================================================================
+# ЗАПУСК ТЕСТОВ
+# ============================================================================
 
 if __name__ == "__main__":
-    run_all_tests()
+    pytest.main([__file__, "-v", "--tb=short"])
